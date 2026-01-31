@@ -1,1 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Star Battle Logic 6.3</title>
+    <style>
+        body { background: #0b0d0f; color: #00ffcc; font-family: sans-serif; margin: 0; padding: 0; text-align: center; }
+        .header { background: #111; padding: 15px 5px; border-bottom: 2px solid #ff0044; }
+        h1 { color: #ff0044; margin: 0 0 10px 0; font-size: 18px; text-shadow: 0 0 5px #ff0044; }
+        
+        .palette { margin: 10px auto; width: 100%; text-align: center; line-height: 45px; }
+        .color-btn { display: inline-block; width: 34px; height: 34px; margin: 3px; border-radius: 50%; border: 2px solid white; vertical-align: middle; }
+        .active { border: 3px solid #00ffcc !important; box-shadow: 0 0 10px #00ffcc; transform: scale(1.1); }
+
+        .r0 { background: #2c3e50; } .r1 { background: #c0392b; } .r2 { background: #27ae60; }
+        .r3 { background: #f1c40f; } .r4 { background: #2980b9; } .r5 { background: #8e44ad; }
+        .r6 { background: #16a085; } .r7 { background: #e67e22; } .r8 { background: #7f8c8d; } .r9 { background: #d35400; }
+
+        .grid-wrapper { width: 100%; padding: 20px 0; display: block; overflow-x: auto; }
+        #game-table { margin: 0 auto; border-collapse: collapse; border: 2px solid #00ffcc; table-layout: fixed; background: #444; }
+        .cell { width: 42px; height: 42px; min-width: 42px; min-height: 42px; padding: 0; border: 1px solid #222; text-align: center; vertical-align: middle; font-size: 26px; font-weight: bold; color: white; }
+
+        .btn { background: #ff0044; color: white; border: none; padding: 10px 14px; margin: 5px; border-radius: 4px; font-weight: bold; }
+        input { background: #222; color: #00ffcc; border: 1px solid #00ffcc; width: 35px; padding: 5px; text-align: center; font-size: 16px; }
+        .status { border: 1px solid #00ffcc; margin: 10px; padding: 12px; border-radius: 4px; font-size: 15px; min-height: 22px; font-weight: bold; background: rgba(0,255,204,0.05); }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<div class="header">
+    <h1>STAR-BATTLE 6.3</h1>
+    <div>
+        大小 <input type="number" id="gridSize" value="8"> 
+        ★ <input type="number" id="starN" value="1">
+        <button class="btn" onclick="applySettings()">重構</button>
+    </div>
+    <div style="margin-top:5px;">
+        <button class="btn" id="modeBtn" style="background:#00ffcc; color:#000;" onclick="toggleMode()">模式：畫區</button>
+        <button class="btn" onclick="checkPuzzle()">[啟動完整掃描]</button>
+    </div>
+    <div id="palette-box" class="palette">
+        <div class="color-btn r0" onclick="setReg(0)"></div>
+        <div class="color-btn r1 active" onclick="setReg(1)"></div>
+        <div class="color-btn r2" onclick="setReg(2)"></div>
+        <div class="color-btn r3" onclick="setReg(3)"></div>
+        <div class="color-btn r4" onclick="setReg(4)"></div>
+        <div class="color-btn r5" onclick="setReg(5)"></div>
+        <div class="color-btn r6" onclick="setReg(6)"></div>
+        <div class="color-btn r7" onclick="setReg(7)"></div>
+        <div class="color-btn r8" onclick="setReg(8)"></div>
+        <div class="color-btn r9" onclick="setReg(9)"></div>
+    </div>
+</div>
+
+<div id="statusMsg" class="status">系統準備就緒</div>
+
+<div class="grid-wrapper">
+    <table id="game-table"></table>
+</div>
+
+<script>
+    let size = 8, targetStars = 1, isEditing = true, selectedReg = 1, isMouseDown = false;
+    let gridData = [], stars = [];
+
+    function setReg(id) {
+        selectedReg = id;
+        const btns = document.getElementsByClassName('color-btn');
+        for(let i=0; i<btns.length; i++) {
+            btns[i].className = btns[i].className.replace(' active', '');
+            if(i === id) btns[i].className += ' active';
+        }
+    }
+
+    function applySettings() {
+        size = parseInt(document.getElementById("gridSize").value);
+        targetStars = parseInt(document.getElementById("starN").value);
+        gridData = []; stars = [];
+        for(let r=0; r<size; r++) {
+            gridData[r] = []; stars[r] = [];
+            for(let c=0; c<size; c++) { gridData[r][c] = 0; stars[r][c] = ""; }
+        }
+        renderGrid();
+    }
+
+    function renderGrid() {
+        const table = document.getElementById("game-table");
+        table.innerHTML = "";
+        table.style.width = (size * 42) + "px";
+        for (let r = 0; r < size; r++) {
+            const row = table.insertRow();
+            for (let c = 0; c < size; c++) {
+                const cell = row.insertCell();
+                cell.id = "c-" + r + "-" + c;
+                cell.className = "cell r0";
+                const startFunc = (e) => { e.preventDefault(); isMouseDown = true; handleAction(r, c); };
+                cell.onmousedown = startFunc;
+                cell.ontouchstart = startFunc;
+                cell.onmouseenter = () => { if(isMouseDown && isEditing) handleAction(r, c); };
+            }
+        }
+    }
+
+    window.addEventListener('touchmove', function(e) {
+        if (!isEditing || !isMouseDown) return;
+        var touch = e.touches[0];
+        var el = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (el && el.id && el.id.indexOf('c-') === 0) {
+            var parts = el.id.split('-');
+            handleAction(parseInt(parts[1]), parseInt(parts[2]));
+        }
+    }, { passive: false });
+
+    window.onmouseup = window.ontouchend = function() { isMouseDown = false; };
+
+    function handleAction(r, c) {
+        const cell = document.getElementById("c-" + r + "-" + c);
+        if (isEditing) {
+            gridData[r][c] = selectedReg;
+            cell.className = "cell r" + selectedReg;
+        } else {
+            if (stars[r][c] === "") stars[r][c] = "★";
+            else if (stars[r][c] === "★") stars[r][c] = "X";
+            else stars[r][c] = "";
+            cell.innerText = stars[r][c];
+            cell.style.color = (stars[r][c] === "★") ? "#ffeb3b" : "#777";
+        }
+    }
+
+    function toggleMode() {
+        isEditing = !isEditing;
+        document.getElementById("modeBtn").innerText = isEditing ? "模式：畫區" : "模式：解題";
+        document.getElementById("modeBtn").style.background = isEditing ? "#00ffcc" : "#ff0044";
+        document.getElementById("palette-box").style.display = isEditing ? "block" : "none";
+        document.getElementById("statusMsg").innerText = isEditing ? "畫區模式：塗抹設定顏色" : "解題模式：點擊放星";
+    }
+
+    function checkPuzzle() {
+        let log = [];
+        let totalCount = 0;
+        const n = targetStars;
+        let regCounts = {};
+
+        // 1. 遍歷檢查八方衝突與計算區域星數
+        for(let r=0; r<size; r++) {
+            for(let c=0; c<size; c++) {
+                if(stars[r][c] === "★") {
+                    totalCount++;
+                    // 區域累加
+                    let rid = gridData[r][c];
+                    regCounts[rid] = (regCounts[rid] || 0) + 1;
+
+                    // 八方檢查 (核心邏輯)
+                    for(let i=-1; i<=1; i++) {
+                        for(let j=-1; j<=1; j++) {
+                            if(i===0 && j===0) continue;
+                            let nr=r+i, nc=c+j;
+                            if(nr>=0 && nr<size && nc>=0 && nc<size && stars[nr][nc]==="★")
+                                { if(!log.includes("星星位置相鄰！")) log.push("星星位置相鄰！"); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 區域過載檢查
+        for(let rid in regCounts) {
+            if(regCounts[rid] > n) log.push("區域顏色星星過多！");
+        }
+
+        // 3. 行列數量檢查
+        for(let i=0; i<size; i++) {
+            let rs=0, cs=0;
+            for(let j=0; j<size; j++) {
+                if(stars[i][j]==="★") rs++;
+                if(stars[j][i]==="★") cs++;
+            }
+            if(rs > n) log.push("第 " + (i+1) + " 行數量超標！");
+            if(cs > n) log.push("第 " + (i+1) + " 列數量超標！");
+        }
+
+        const msg = document.getElementById("statusMsg");
+        if(log.length > 0) { 
+            msg.innerText = "❌ " + log[0]; 
+            msg.style.color = "#ff4444"; 
+        } else if(totalCount < size * n) { 
+            msg.innerText = "⚠️ 數量不足 (" + totalCount + "/" + (size*n) + " ★)"; 
+            msg.style.color = "#00ffcc"; 
+        } else if(totalCount > size * n) {
+            msg.innerText = "❌ 總量超標！";
+            msg.style.color = "#ff4444";
+        } else { 
+            msg.innerText = "✅ 全區邏輯同步正確！"; 
+            msg.style.color = "#00ffcc"; 
+        }
+    }
+
+    applySettings();
+</script>
+</body>
+</html>
 
